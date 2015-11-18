@@ -1,0 +1,163 @@
+---
+title: "Practical Machine Learning - Course Project"
+output: 
+html_document:
+theme: united
+---
+
+For this project, we are given data from accelerometers on the belt, forearm, arm, and dumbell of 6 research study participants. The purpose is to classify five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes.
+
+Read more: http://groupware.les.inf.puc-rio.br/har.#ixzz3rlxq5xQi
+
+Read more: http://groupware.les.inf.puc-rio.br/har.#ixzz3rlxdARdV
+
+Our training data consists of accelerometer data and a label identifying the quality of the activity the participant was doing.  Our testing data consists of accelerometer data without the identifying label. Our goal is to predict the labels for the test set observations.
+
+Below is the code I used when creating the model, estimating the out of sample error, and making predictions. I also include a description of each step of the process.
+
+Author: Qianqian
+
+The training data for this project are available here:
+
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv>
+
+The test data are available here:
+
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv>
+
+The data for this project comes from this original source: http://groupware.les.inf.puc-rio.br/har. 
+
+The goal of the project is to predict the manner in which they did the exercise. You may use the other variables to predict he "classe" variable.
+
+### Load Data
+```{r}
+data<-read.csv("./pml-training.csv", sep=",", header=TRUE)
+test<-read.csv("./pml-testing.csv", sep=",", header=TRUE)
+
+library(caret)
+set.seed(123)
+```
+
+### Training and cross-validation set
+```{r}
+inTrain<-createDataPartition(y=data$classe, p=0.6, list=FALSE)
+myTraining<-data[inTrain,]
+myTesting<-data[-inTrain,]
+
+dim(myTraining); dim(myTesting); dim(test)
+# 11776,160; # 7846, 160  # 20, 160
+```
+
+
+### Data Pre-processing
+
+Transform 1: remove near zero predictors
+```{r}
+nzv<-nearZeroVar(myTraining)
+myTraining2<-myTraining[, -nzv]
+dim(myTraining2)
+# 11776, 107
+```
+
+Transform 2: remove predictor with missing value more than 60%
+```{r}
+thresholdNA<-0.6
+checkNA<-function(col){
+    (   sum(is.na(col))>=(thresholdNA*length(col))   )
+}
+lotNAs<-sapply(myTraining2, checkNA)
+# lotNAs
+myTraining3<-myTraining2[, !lotNAs]
+dim(myTraining3)
+# 11776, 59
+```
+
+Transform 3: remove first 1-6 columns. They are index, username, time_stamps
+```{r}
+myTraining4<-myTraining3[,-c(1,2,3,4,5,6)]
+dim(myTraining4)
+# 11776, 53
+```
+
+Transform 4: Apply the same transformation to myTesting dataset
+```{r}
+clean1 <- colnames(myTraining4)
+myTesting2<-myTesting[clean1]
+dim(myTesting2) 
+# 7846 53
+```
+
+Transform 5: Remove classe, apply the same transformation to test dataset
+```{r}
+# Last column is classe
+clean2 <- colnames(myTraining4[, -53])
+test2<-test[clean2]
+```
+
+```{r, eval=FALSE}
+dim(test2)
+# 20,52
+```
+
+Check NA in dataset before running model
+```{r}
+any(is.na(myTraining4))
+```
+
+### Model Building
+
+Fit decision tree
+```{r}
+library(rattle)
+library(e1071)
+library(rpart.plot)
+# library(caret)
+
+modFit_tree<-train(classe~., method="rpart", data=myTraining4)
+print(modFit_tree$finalModel)
+# plot(modFit_tree$finalModel, uniform=TRUE)
+
+fancyRpartPlot(modFit_tree$finalModel)
+# fancyRpartPlot(modFit_tree$finalModel,cex=.5,under.cex=1,shadow.offset=0)
+
+predict_tree=predict(modFit_tree, myTesting2)
+confusionMatrix(myTesting2$classe, predict_tree)
+# accuracy is 50.69%
+```
+
+Fit Random Forest
+```{r}
+library(randomForest)
+
+modelFit_rf2<-randomForest(classe~., data=myTraining4)
+
+predict_rf2=predict(modelFit_rf2, myTesting2)
+confusionMatrix(myTesting2$classe, predict_rf2)
+# Random Forest Model is 99.43% accuracy when testing on cross-validation dataset
+```
+
+### Expected Error
+
+
+1. The expect the out of sample accuracy is 99.4%. Estimate error rate is 0.6%.
+
+
+
+### Prediction on test dataset. Create Prediction File
+Finally, we use random forest model to predict 20 test data
+```{r}
+prediction<-predict(modelFit_rf2, test2)
+prediction
+```
+
+Function to generate files with predictions for submission.
+```{r, eval=FALSE}
+pml_write_files=function(x){
+    n=length(x)
+    for(i in 1:n){
+        filename=paste0("problem_id_", i, ".txt")
+        write.table(x[i], file=filename, quote=FALSE, row.names=FALSE, col.names=FALSE)
+    }
+}
+pml_write_files(prediction)
+```
